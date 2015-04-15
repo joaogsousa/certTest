@@ -195,6 +195,20 @@ char* getModulo(X509* cert,char* modulus){
 }
 
 
+int verificarHexa(char* string){
+	int i = 0;
+	int flag = 1;
+	char aux;
+	while(string[i] != '\0'){
+		aux = string[i];
+		if(!(aux >= '0' && aux <= '9') && !(aux >= 'A' && aux <= 'F')){
+			flag = 0;	
+		}
+		i++;
+	}
+	return flag;
+}
+
 //recebe e faz o parsing dos certificados, se tudo certo retorna 0, else retorna 1 pra indicar erro nos arquivos retorna
 //retorna 2 indicando extensao nao reconhecida
 //retorna 3 indicando erro ao pegar os modulos
@@ -252,6 +266,9 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 	}
 	
 	
+	//cuidado, alteraçao dee abrir arquivo
+	cert1isBin = 0;
+	
 	//abrir o arquivo do jeito correto
 	if(cert1isBin){
 		cert1Fp = fopen(fullFilename,"rb");
@@ -266,15 +283,31 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		return certVazio;
 	}
 	
-	
+	char* modulo;
 	
 	int tipoCert;
-	if(!strcmp(cert1Ext,"crt") || !strcmp(cert1Ext,"der")){
+	if(!strcmp(cert1Ext,"crt") || !strcmp(cert1Ext,"der") || !strcmp(cert1Ext,"cer")){
 		//processar arquivo der
 		tipoCert = TYPE_DER;
+		
+		X509 *certDer = d2i_X509_fp(cert1Fp, NULL);
+		
+		if(!certDer){
+			fclose(cert1Fp);
+			printf("problema ao ler certificado der, %s\n",cert1);
+			return certVazio;
+		}else{
+			modulo = getModulo(certDer,modulo);
+			if(verificarHexa(modulo)){
+				cinstr(bigModulo,modulo);
+				getModules++;
+			}else{
+				printf("Modulo der recebido errado, caracteres invalidos, %s\n",cert1);
+				getchar();
+			}
+		}
 	}
 	
-	char* modulo;
 	
 	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
 		//processar arquivo PEM
@@ -289,15 +322,20 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			//parsing de boas
 			modulo = getModulo(certa,modulo);
 			//printf("modulus:\n%s\n",modulo);
-			cinstr(bigModulo,modulo);
-			getModules++;
+			if(verificarHexa(modulo)){
+				cinstr(bigModulo,modulo);
+				getModules++;
+			}else{
+				printf("Modulo PEM recebido errado, caracteres invalidos, %s\n",cert1);
+				getchar();
+			}
 		}
 		
 	}
 	
 	
 	if(getModules != 1){
-		printf("nao pegou os modulo return vazio\n");
+		printf("nao pegou o modulo return vazio, %s\n",cert1);
 		return certVazio;
 	}else{
 		strcpy(certResult.filename,cert1);
@@ -499,7 +537,7 @@ int recebeDiretorio(char* diretorio){
 		certificadosVetor[i] = inicializaCertificado(certificadosVetor[i].filename,diretorio);
 	}
 	
-	if(setDebug){
+	if(setDebug || 1){
 		printf("print dos nos:\n\n");
 		for(i=0;i<numNos;i++){
 			printf("<%s>\n",certificadosVetor[i].filename);
@@ -522,6 +560,10 @@ int recebeDiretorio(char* diretorio){
 		printf("Entrou na parte de inicializar as arestas\n");
 	}
 	
+	FILE* arquivoResult;
+	
+	arquivoResult = fopen("colisoes","w");
+	
 	for(i=0;i<numNos;i++){
 		//definiar arestas a partir de j > i
 		for(j = i + 1;j<numNos;j++){
@@ -542,6 +584,9 @@ int recebeDiretorio(char* diretorio){
 				printf("Fez o mdc entre %d e %d\n",i,j);
 			}
 			
+			if(strcmp(mdcResultado,"1")){
+				fprintf(arquivoResult,"%s <-> %s == %s\n",certificadosVetor[i].filename,certificadosVetor[j].filename,mdcResultado);
+			}
 			
 			strcpy(arestaAux.mdc,mdcResultado);
 			arestasVetor[k] = arestaAux;
@@ -549,6 +594,8 @@ int recebeDiretorio(char* diretorio){
 		}
 		
 	}
+	
+	fclose(arquivoResult);
 	
 	//depois de definido as arestas printa-las
 	if(setDebug){
