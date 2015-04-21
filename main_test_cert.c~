@@ -15,11 +15,14 @@
 
 #define TYPE_PEM 0
 #define TYPE_DER 1
+#define TIPO_CUSTOM 3
 
 #define TAM_MODULE 600
 #define NUM_DIGITOS_MIRACL 2000
 #define BASE_MIRACL 16
 
+//site importante:
+//http://www.mobilefish.com/services/rsa_key_generation/rsa_key_generation.php
 
 //warning variavel global
 int setDebug = 0;
@@ -143,7 +146,7 @@ char* getExtension(char* nomeArquivo,char* extensao){
 }
 
 int extensaoReconhecida(char* ext){
-	if(!strcmp(ext,"der") || !strcmp(ext,"cer") || !strcmp(ext,"crt") || !strcmp(ext,"pem") || !strcmp(ext,"PEM")){
+	if(!strcmp(ext,"der") || !strcmp(ext,"custom") || !strcmp(ext,"cer") || !strcmp(ext,"crt") || !strcmp(ext,"pem") || !strcmp(ext,"PEM")){
 		return 1;
 	}else{
 		return 0;
@@ -201,7 +204,7 @@ int verificarHexa(char* string){
 	char aux;
 	while(string[i] != '\0'){
 		aux = string[i];
-		if(!(aux >= '0' && aux <= '9') && !(aux >= 'A' && aux <= 'F')){
+		if(!(aux >= '0' && aux <= '9') && !(aux >= 'A' && aux <= 'F') && !(aux >= 'a' && aux <= 'f')){
 			flag = 0;	
 		}
 		i++;
@@ -218,6 +221,12 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 	int cert1isBin;
 	int k;
 	char diretorioBackup[200];
+	int i;
+	
+	if(setDebug){
+		printf("entrou na inicializacao de cert\n");
+		
+	}
 	
 	//inicializar miracl
 	miracl *mip = mirsys(NUM_DIGITOS_MIRACL, BASE_MIRACL);
@@ -259,7 +268,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		return certVazio;
 	}
 	
-	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
+	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem") || !strcmp(cert1Ext,"custom")){
 		cert1isBin = 0;
 	}else{
 		cert1isBin = 1;
@@ -283,7 +292,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		return certVazio;
 	}
 	
-	char* modulo;
+	char modulo[MOD_TAM];
 	
 	int tipoCert;
 	if(!strcmp(cert1Ext,"crt") || !strcmp(cert1Ext,"der") || !strcmp(cert1Ext,"cer")){
@@ -297,7 +306,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			printf("problema ao ler certificado der, %s\n",cert1);
 			return certVazio;
 		}else{
-			modulo = getModulo(certDer,modulo);
+			getModulo(certDer,modulo);
 			if(verificarHexa(modulo)){
 				cinstr(bigModulo,modulo);
 				getModules++;
@@ -307,6 +316,26 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			}
 		}
 	}
+	
+	
+	if(!strcmp(cert1Ext,"custom")){
+		if(setDebug){
+			printf("Tipo custom\n");
+		}
+		tipoCert = TIPO_CUSTOM;
+		
+		fgets(modulo,2000,cert1Fp);
+		
+		printf("%s\n",modulo);
+		assert(verificarHexa(modulo));
+		getModules++;
+	}
+	
+	
+	if(setDebug && tipoCert == TIPO_CUSTOM){
+		printf("Tipo custom feito\n");
+	}
+	
 	
 	
 	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
@@ -320,7 +349,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			return certVazio;
 		}else{
 			//parsing de boas
-			modulo = getModulo(certa,modulo);
+			getModulo(certa,modulo);
 			//printf("modulus:\n%s\n",modulo);
 			if(verificarHexa(modulo)){
 				cinstr(bigModulo,modulo);
@@ -531,6 +560,10 @@ int recebeDiretorio(char* diretorio){
 		}
 	}
 	
+	if(setDebug){
+		printf("Vai inicializar certificados\n");
+		
+	}
 	
 	//inicializa os certificados!!!
 	for(i=0;i<numNos;i++){
@@ -654,8 +687,6 @@ int main(int argc, char** argv){
 			}
 		}
 	}
-	
-	
 	
 	if(erroArgumentos){
 		system("clear");
