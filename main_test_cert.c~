@@ -20,6 +20,8 @@
 #define TAM_MODULE 600
 #define NUM_DIGITOS_MIRACL 2000
 #define BASE_MIRACL 16
+#define TIPO_BIN 1
+#define TIPO_ASCII 2
 
 //site importante:
 //http://www.mobilefish.com/services/rsa_key_generation/rsa_key_generation.php
@@ -39,11 +41,6 @@ typedef struct aresta{
 	int no2;
 }aresta;
 
-typedef struct listaCert{
-	t_certificate cert;
-	struct listaCert* next;
-	struct listaCert* prev;
-}listaCert;
 
 
 big MDC(big x, big y){
@@ -124,6 +121,26 @@ char* analisarHeadPem(char* head,char* metadado){
 	return metadado;
 }
 
+int analisarTipoArquivo(char* arquivo){
+	FILE* fpArq;
+	int i;
+	char palavra[10];
+	
+	fpArq = fopen(arquivo,"r");
+	for(i=0;i<5;i++){
+		palavra[i] = fgetc(fpArq);
+	}
+	palavra[i] = '\0';
+	
+	
+	if(!strcmp(palavra,"-----")){
+		return TIPO_ASCII;
+	}else{
+		return TIPO_BIN;
+	}
+	
+}
+
 char* getExtension(char* nomeArquivo,char* extensao){
 	int i = 0;
 	int j = 0;
@@ -192,6 +209,7 @@ char* getModulo(X509* cert,char* modulus){
 		
 		EVP_PKEY_free(pkey);
 	}
+	
 		
 	return modulus;
 	
@@ -228,6 +246,8 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		
 	}
 	
+	
+	
 	//inicializar miracl
 	miracl *mip = mirsys(NUM_DIGITOS_MIRACL, BASE_MIRACL);
 	big bigModulo = mirvar(0);
@@ -250,8 +270,6 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 	strcpy(diretorio,diretorioBackup);
 	
 	
-	
-	
 	int getModules = 0;
 	
 	//definir certificado vazio
@@ -263,20 +281,17 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 	
 	
 	
-	if(!extensaoReconhecida(cert1Ext)){
-		printf("ext nao reconhecida\n");
-		return certVazio;
-	}
+// 	if(!extensaoReconhecida(cert1Ext)){
+// 		printf("ext nao reconhecida\n");
+// 		return certVazio;
+// 	}
 	
-	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem") || !strcmp(cert1Ext,"custom")){
+	if(analisarTipoArquivo(fullFilename) == TIPO_ASCII || !strcmp(cert1Ext,"custom")){
 		cert1isBin = 0;
 	}else{
 		cert1isBin = 1;
 	}
 	
-	
-	//cuidado, alteraçao dee abrir arquivo
-	cert1isBin = 0;
 	
 	//abrir o arquivo do jeito correto
 	if(cert1isBin){
@@ -295,7 +310,10 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 	char modulo[MOD_TAM];
 	
 	int tipoCert;
-	if(!strcmp(cert1Ext,"crt") || !strcmp(cert1Ext,"der") || !strcmp(cert1Ext,"cer")){
+	
+	
+	//processamento e recuperaçao dos modulos
+	if(cert1isBin == 1){
 		//processar arquivo der
 		tipoCert = TYPE_DER;
 		
@@ -306,9 +324,8 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			printf("problema ao ler certificado der, %s\n",cert1);
 			return certVazio;
 		}else{
-			getModulo(certDer,modulo);
+			strcpy(modulo,getModulo(certDer,modulo));
 			if(verificarHexa(modulo)){
-				cinstr(bigModulo,modulo);
 				getModules++;
 			}else{
 				printf("Modulo der recebido errado, caracteres invalidos, %s\n",cert1);
@@ -316,9 +333,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			}
 		}
 	}
-	
-	
-	if(!strcmp(cert1Ext,"custom")){
+	else if(!strcmp(cert1Ext,"custom")){
 		if(setDebug){
 			printf("Tipo custom\n");
 		}
@@ -330,15 +345,7 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		assert(verificarHexa(modulo));
 		getModules++;
 	}
-	
-	
-	if(setDebug && tipoCert == TIPO_CUSTOM){
-		printf("Tipo custom feito\n");
-	}
-	
-	
-	
-	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
+	else if(cert1isBin == 0){
 		//processar arquivo PEM
 		tipoCert = TYPE_PEM;
 		
@@ -349,10 +356,9 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 			return certVazio;
 		}else{
 			//parsing de boas
-			getModulo(certa,modulo);
+			strcpy(modulo,getModulo(certa,modulo));
 			//printf("modulus:\n%s\n",modulo);
 			if(verificarHexa(modulo)){
-				cinstr(bigModulo,modulo);
 				getModules++;
 			}else{
 				printf("Modulo PEM recebido errado, caracteres invalidos, %s\n",cert1);
@@ -361,6 +367,8 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 		}
 		
 	}
+	
+	
 	
 	
 	if(getModules != 1){
@@ -376,128 +384,6 @@ t_certificate inicializaCertificado(char* cert1,char* diretorio){
 }
 
 
-
-
-//recebe e faz o parsing dos certificados, se tudo certo retorna 0, else retorna 1 pra indicar erro nos arquivos retorna
-//retorna 2 indicando extensao nao reconhecida
-//retorna 3 indicando erro ao pegar os modulos
-int recebeCertificados(char* cert1, char* cert2){
-	FILE* cert1Fp;
-	FILE* cert2Fp;
-	char cert1Ext[100];
-	char cert2Ext[100];
-	int cert1isBin;
-	int cert2isBin;
-	
-	strcpy(cert1Ext,getExtension(cert1,cert1Ext));
-	strcpy(cert2Ext,getExtension(cert2,cert2Ext));
-	
-	
-	if(!extensaoReconhecida(cert1Ext) || !extensaoReconhecida(cert2Ext)){
-		return 2;
-	}
-	
-	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
-		cert1isBin = 0;
-	}else{
-		cert1isBin = 1;
-	}
-	
-	if(!strcmp(cert2Ext,"PEM") || !strcmp(cert2Ext,"pem")){
-		cert2isBin = 0;
-	}else{
-		cert2isBin = 1;
-	}
-	//abrir o arquivo do jeito correto
-	if(cert1isBin){
-		cert1Fp = fopen(cert1,"rb");
-		
-	}else{
-		cert1Fp = fopen(cert1,"r");
-		
-	}
-	
-	
-	//abrir o arquivo 2 do jeito correto
-	if(cert2isBin){
-		cert2Fp = fopen(cert2,"rb");
-		
-	}else{
-		cert2Fp = fopen(cert2,"r");
-		
-	}
-
-	
-	if(cert1Fp == NULL || cert2Fp == NULL){
-		return 1;
-	}
-	
-	if(!strcmp(cert1Ext,"crt") || !strcmp(cert1Ext,"der")){
-		//processar arquivo der
-		
-		
-	}
-	
-	//inicializar miracl
-	miracl *mip = mirsys(NUM_DIGITOS_MIRACL, BASE_MIRACL);
-	big mdcResult = mirvar(0);
-	big x = mirvar(0);
-	big y = mirvar(0);
-	mip->IOBASE = 16;
-	
-	int getModules = -1;
-	
-	if(!strcmp(cert1Ext,"PEM") || !strcmp(cert1Ext,"pem")){
-		//processar arquivo PEM
-		X509 *certa = (X509 *)PEM_read_X509(cert1Fp, NULL, NULL, NULL);
-		if (!certa) {
-			fclose(cert1Fp);
-			return 2;
-		}else{
-			//parsing de boas
-			char* modulo;
-			modulo = getModulo(certa,modulo);
-			printf("modulus:\n%s\n",modulo);
-			getchar();
-			
-			
-			cinstr(x,modulo);
-			getModules++;
-		}
-		
-	}
-	
-	
-	
-	if(!strcmp(cert2Ext,"PEM") || !strcmp(cert2Ext,"pem")){
-		//processar arquivo PEM
-		X509 *certb = (X509 *)PEM_read_X509(cert2Fp, NULL, NULL, NULL);
-		if (!certb) {
-			fclose(cert2Fp);
-			return 2;
-		}else{
-			//parsing de boas
-			char* modulo2;
-			modulo2 = getModulo(certb,modulo2);
-			printf("modulus:\n%s\n",modulo2);
-			getchar();
-			
-			
-			cinstr(y,modulo2);
-			getModules++;
-		}
-		
-	}
-	
-	if(getModules == 1){
-		MDC(x,y);
-	}
-	else{
-		return 3;	
-	}
-	
-	return 0;
-}
 
 void printarArestas(aresta* vetorDeArestas,int tam){
 	int i;
@@ -522,7 +408,6 @@ void printarArestas(aresta* vetorDeArestas,int tam){
 int recebeDiretorio(char* diretorio){
 	DIR* dirAtual;
 	struct dirent *arquivo;
-	listaCert *certAux;
 	int i;
 	int numNos;
 	int numArestas;
@@ -609,16 +494,20 @@ int recebeDiretorio(char* diretorio){
 			strcpy(moduloA,certificadosVetor[i].module);
 			strcpy(moduloB,certificadosVetor[j].module);
 			
-			if(setDebug){
-				printf("Vai fazer o mdc entre %d e %d\n",i,j);
-			}
-			mdcComStrings(moduloA,moduloB,mdcResultado);
-			if(setDebug){
-				printf("Fez o mdc entre %d e %d\n",i,j);
-			}
-			
-			if(strcmp(mdcResultado,"1")){
-				fprintf(arquivoResult,"%s <-> %s == %s\n",certificadosVetor[i].filename,certificadosVetor[j].filename,mdcResultado);
+			if(certificadosVetor[i].certType != -1 && certificadosVetor[j].certType != -1){
+				if(setDebug){
+					printf("Vai fazer o mdc entre %d e %d\n",i,j);
+				}
+				mdcComStrings(moduloA,moduloB,mdcResultado);
+				if(setDebug){
+					printf("Fez o mdc entre %d e %d\n",i,j);
+				}
+				
+				if(strcmp(mdcResultado,"1") && strcmp(mdcResultado,"-1")){
+					fprintf(arquivoResult,"%s <-> %s == %s\n",certificadosVetor[i].filename,certificadosVetor[j].filename,mdcResultado);
+				}
+			}else{
+				strcpy(mdcResultado,"-1");
 			}
 			
 			strcpy(arestaAux.mdc,mdcResultado);
@@ -704,9 +593,6 @@ int main(int argc, char** argv){
 		printf("To help:\nexe -help\n");
 		return 1;
 	}
-	if(padrao){
-		codigoErroCert = recebeCertificados(argv[1],argv[2]);
-	}
 	int erroDiretorio;
 	if(folder){
 		erroDiretorio = recebeDiretorio(argv[2]);
@@ -714,7 +600,7 @@ int main(int argc, char** argv){
 	
 	if(erroDiretorio == 1){
 		system("clear");
-		printf("The folder specified do not exist\n");
+		printf("The specified folder do not exist\n");
 		return 1;
 	}
 	
